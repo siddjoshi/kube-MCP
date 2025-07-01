@@ -66,6 +66,20 @@ jspm_packages/
 .env.production.local
 .env.*.local
 
+# Configuration files with sensitive data
+config.json
+config.yaml
+config.yml
+settings.json
+settings.yaml
+settings.yml
+credentials.json
+credentials.yaml
+credentials.yml
+*credentials*
+*config.local*
+*settings.local*
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
@@ -203,3 +217,42 @@ debug/
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Python (for cross-platform MCP development)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+*.egg-info/
+.eggs/
+
+# MCP Server specific
+mcp-server.log
+*.mcp
+mcp-config/
+mcp-cache/
+.mcp/
+
+# API keys and tokens
+*.token
+*.key
+api-keys/
+tokens/
+auth/
+.auth
+
+# Service-specific configs
+servicenow.config
+*.credentials
