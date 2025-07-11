@@ -1,7 +1,7 @@
 # Copilot Instructions for Kubernetes MCP Server
 
 ## Project Overview
-This is a **Model Context Protocol (MCP) server** that bridges AI assistants with Kubernetes clusters, providing 50+ tools for cluster management through the MCP standard. The server is built with TypeScript and uses ES modules throughout.
+This is a **Model Context Protocol (MCP) server** that bridges AI assistants with Kubernetes clusters, providing 50+ tools for cluster management through the MCP standard. The server supports three transport modes: stdio (default), SSE, and HTTP chunked streaming for real-time operations.
 
 ## Key Architecture Patterns
 
@@ -10,7 +10,7 @@ The codebase follows a manager pattern where each domain has its own manager cla
 - `KubernetesManager` - Core K8s API client management and connection handling
 - `ToolManager` - Registers and executes all 50+ MCP tools (pods, deployments, helm, etc.)
 - `ResourceManager` - Handles MCP resource discovery and hierarchical organization
-- `PromptManager` - Provides guided troubleshooting workflows
+- `PromptManager` - Provides guided troubleshooting workflows (12+ diagnostic prompts)
 - `SecurityManager` - RBAC validation and audit logging
 - `MetricsManager` - Prometheus metrics and health monitoring
 
@@ -19,12 +19,18 @@ All configuration uses Zod schemas in `src/config/config.ts`. The `loadConfig()`
 
 ### Kubernetes Authentication Strategy
 `KubernetesManager.loadKubeConfig()` implements a waterfall authentication approach:
-1. In-cluster service account
-2. `KUBECONFIG_YAML` environment variable
-3. `KUBECONFIG_JSON` environment variable  
+1. In-cluster service account (`/var/run/secrets/kubernetes.io/serviceaccount`)
+2. `KUBECONFIG_YAML` environment variable (inline YAML)
+3. `KUBECONFIG_JSON` environment variable (inline JSON)
 4. Minimal config (`K8S_SERVER` + `K8S_TOKEN`)
 5. Custom path (`KUBECONFIG_PATH`)
 6. Default `~/.kube/config`
+
+### Transport Architecture
+Three distinct transport modes with different initialization patterns:
+- **stdio**: Standard MCP transport for AI assistants like Claude Desktop
+- **sse**: Server-sent events with Express endpoint  
+- **http-chunked**: Custom streaming endpoint at `/call-tool-chunked` for real-time progress
 
 ## Development Workflows
 
@@ -38,11 +44,14 @@ npm test            # Jest tests with 95% coverage requirement
 npm run lint        # ESLint with TypeScript rules
 ```
 
-### MCP Server Testing
-Start server with `npm start` then test MCP integration:
-- Uses stdio transport by default
-- SSE transport available with `MCP_TRANSPORT=sse`
-- Connect via Claude Desktop or any MCP client
+### Transport Testing Strategies
+- **Local Development**: `npm run start:direct` with stdio transport
+- **HTTP Testing**: `MCP_TRANSPORT=http-chunked npm start` then POST to `/call-tool-chunked`
+- **Container Testing**: `docker build -t mcp-server . && docker run -p 3000:3000 mcp-server`
+- **Claude Desktop**: Add to `claude_desktop_config.json` with stdio transport
+
+### Kubernetes Deployment Pattern
+Uses `k8s-mcp-server.yaml` with ServiceAccount, RBAC, Deployment, and Service. The container runs with in-cluster authentication and `http-chunked` transport by default.
 
 ## Code Conventions
 
@@ -80,6 +89,23 @@ private createNewToolHandler(): ToolHandler {
 }
 ```
 
+### KubectlExecutor Pattern
+Tools use `KubectlExecutor` to translate commands to K8s API calls rather than spawning kubectl processes:
+```typescript
+const result = await this.kubectlExecutor.execute('get', ['pods', '-n', namespace]);
+return {
+  content: [{ type: 'text', text: result.success ? result.output : result.error }],
+  isError: !result.success
+};
+```
+
+### Prompt System Architecture
+`PromptManager` provides 12+ diagnostic workflows with dynamic arguments:
+- `k8s-pod-crashloop-diagnose` - CrashLoopBackOff analysis
+- `k8s-rbac-access-denied` - RBAC troubleshooting
+- `k8s-deployment-rollout-troubleshoot` - Rollout issues
+Register new prompts in `registerPrompts()` with structured arguments and guided workflows.
+
 ### ES Module Imports
 **Critical**: All imports must use `.js` extensions for compiled output:
 ```typescript
@@ -102,6 +128,13 @@ Server implements all MCP capabilities:
 - **Resources**: Dynamic K8s resource discovery with hierarchical URIs
 - **Prompts**: Guided troubleshooting workflows
 - Request handlers in `server.ts` include security validation and metrics
+
+### HTTP Chunked Streaming
+Special transport mode for real-time tool execution with progress updates:
+```typescript
+// POST to /call-tool-chunked with {"name": "tool", "args": {...}}
+// Returns streaming JSON responses with progress and final result
+```
 
 ### Security and RBAC
 `SecurityManager` validates operations against K8s RBAC before execution. Use `allowOnlyNonDestructiveTools` config for read-only mode.
