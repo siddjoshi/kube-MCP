@@ -164,9 +164,13 @@ export class MCPKubernetesServer {
     try {
       logger.info('Initializing MCP Kubernetes Server...');
 
-      // Initialize Kubernetes connection
-      await this.kubernetesManager.initialize();
-      logger.info('Kubernetes manager initialized');
+      // Initialize Kubernetes connection (optional for HTTP transport)
+      if (this.config.server.transport !== 'http-chunked') {
+        await this.kubernetesManager.initialize();
+        logger.info('Kubernetes manager initialized');
+      } else {
+        logger.info('Skipping Kubernetes initialization for HTTP chunked transport');
+      }
 
       // Start metrics server if enabled
       if (this.config.server.enableMetrics) {
@@ -181,20 +185,52 @@ export class MCPKubernetesServer {
         // Start HTTP server for SSE
         const express = await import('express');
         const app = express.default();
-        
         app.use('/sse', // @ts-ignore
         this.transport.expressHandler);
         app.listen(this.config.server.port, this.config.server.host);
-        
         logger.info(`SSE transport started on ${this.config.server.host}:${this.config.server.port}/sse`);
+        // Connect server to transport
+        await this.server.connect(this.transport);
+        logger.info('MCP server connected to transport');
+      } else if (this.config.server.transport === 'http-chunked') {
+        // HTTP chunked streaming transport
+        const express = await import('express');
+        const app = express.default();
+        app.use(express.json());
+
+        app.post('/call-tool-chunked', async (req, res) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Transfer-Encoding', 'chunked');
+
+          // Example: stream progress chunks
+          try {
+            const { name, args } = req.body;
+            // Simulate streaming tool execution (replace with real logic)
+            for (let i = 0; i < 5; i++) {
+              await new Promise(r => setTimeout(r, 500));
+              res.write(JSON.stringify({ progress: (i + 1) * 20 }) + '\n');
+            }
+            // Final result
+            const result = await this.toolManager.execute(name, args || {});
+            res.write(JSON.stringify({ status: 'done', result }) + '\n');
+            res.end();
+          } catch (err) {
+            res.write(JSON.stringify({ error: (err as Error).message }) + '\n');
+            res.end();
+          }
+        });
+
+        app.listen(this.config.server.port, this.config.server.host, () => {
+          logger.info(`HTTP chunked MCP server started on http://${this.config.server.host}:${this.config.server.port}`);
+        });
+        // Do NOT connect server to transport in http-chunked mode
       } else {
         this.transport = new StdioServerTransport();
         logger.info('STDIO transport initialized');
+        // Connect server to transport
+        await this.server.connect(this.transport);
+        logger.info('MCP server connected to transport');
       }
-
-      // Connect server to transport
-      await this.server.connect(this.transport);
-      logger.info('MCP server connected to transport');
 
     } catch (error) {
       logError('Failed to start MCP Kubernetes Server', error as Error);

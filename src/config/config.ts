@@ -6,7 +6,7 @@ export const ConfigSchema = z.object({
   server: z.object({
     name: z.string().default('mcp-kubernetes-server'),
     version: z.string().default('1.0.0'),
-    transport: z.enum(['stdio', 'sse']).default('stdio'),
+    transport: z.enum(['stdio', 'sse', 'http-chunked']).default('stdio'),
     port: z.number().min(1).max(65535).default(3000),
     host: z.string().default('localhost'),
     enableMetrics: z.boolean().default(true),

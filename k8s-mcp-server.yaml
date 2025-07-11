@@ -1,0 +1,87 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-server
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-server-sa
+  namespace: mcp-server
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mcp-server-role
+  namespace: mcp-server
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "namespaces", "nodes", "events", "persistentvolumeclaims", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mcp-server-rolebinding
+  namespace: mcp-server
+subjects:
+  - kind: ServiceAccount
+    name: mcp-server-sa
+    namespace: mcp-server
+roleRef:
+  kind: Role
+  name: mcp-server-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server
+  namespace: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-server
+  template:
+    metadata:
+      labels:
+        app: mcp-server
+    spec:
+      serviceAccountName: mcp-server-sa
+      containers:
+        - name: mcp-server
+          image: yourrepo/mcp-server:latest # <-- Replace with your image
+          ports:
+            - containerPort: 3000
+          env:
+            - name: MCP_TRANSPORT
+              value: "http-chunked"
+          # Optionally mount a custom kubeconfig if needed
+          # volumeMounts:
+          #   - name: kubeconfig
+          #     mountPath: /root/.kube
+      # volumes:
+      #   - name: kubeconfig
+      #     secret:
+      #       secretName: my-kubeconfig-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server
+  namespace: mcp-server
+spec:
+  selector:
+    app: mcp-server
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP # Change to LoadBalancer or NodePort if external access is needed 

@@ -1,148 +1,111 @@
-# MCP Server for Kubernetes
+# MCP Kubernetes Server
 
-A comprehensive Model Context Protocol (MCP) server that provides seamless integration between AI assistants and Kubernetes clusters.
+A Model Context Protocol (MCP) server for Kubernetes, supporting chunked HTTP streaming, advanced troubleshooting prompts, and full Kubernetes resource/tool coverage.
 
-## Quick Start
+---
 
-### Prerequisites
+## Prerequisites
+- Node.js v18+ (for local dev/build)
+- Docker (for containerization)
+- Access to a Kubernetes cluster (AKS, EKS, GKE, or local)
+- `kubectl` configured (for testing and kubeconfig management)
 
-- Node.js 18+
-- Kubernetes cluster access
-- kubectl configured
-- (Optional) Helm 3.x for chart operations
+---
 
-### Installation
+## 1. Build and Run Locally
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd mcp-server-kubernetes
-
-# Install dependencies
+```sh
 npm install
-
-# Build the project
 npm run build
-
-# Start the server
-npm start
+MCP_TRANSPORT=http-chunked npm start
 ```
 
-### Configuration
+- By default, the server uses your local kubeconfig (`~/.kube/config` or `C:\Users\<username>\.kube\config`).
+- To use a custom kubeconfig, set the `KUBECONFIG` environment variable:
+  ```sh
+  export KUBECONFIG=/path/to/your/kubeconfig
+  npm start
+  ```
 
-The server supports multiple configuration methods:
+---
 
-#### Environment Variables
+## 2. Dockerize the MCP Server
 
-```bash
-# Kubernetes authentication
-export KUBECONFIG_PATH="/path/to/kubeconfig"
-export K8S_CONTEXT="my-cluster"
-export K8S_NAMESPACE="default"
-
-# Security settings
-export ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS="false"
-export ENABLE_RBAC_VALIDATION="true"
-
-# Server settings
-export MCP_TRANSPORT="stdio"  # or "sse"
-export LOG_LEVEL="info"
-export METRICS_PORT="3001"
+### Build the Docker image
+```sh
+docker build -t yourrepo/mcp-server:latest .
 ```
 
-#### Using with Claude Desktop
-
-Add to your Claude Desktop configuration:
-
-```json
-{
-  "mcpServers": {
-    "kubernetes": {
-      "command": "node",
-      "args": ["/path/to/mcp-server-kubernetes/dist/index.js"],
-      "env": {
-        "KUBECONFIG_PATH": "/path/to/your/kubeconfig",
-        "K8S_CONTEXT": "your-cluster-context"
-      }
-    }
-  }
-}
+### Push to your registry
+```sh
+docker push yourrepo/mcp-server:latest
 ```
 
-## Features
+---
 
-### Core Kubernetes Operations
-- **Resource Management**: Complete CRUD operations for all Kubernetes resources
-- **Multi-cluster Support**: Manage multiple clusters with context switching
-- **Helm Integration**: Chart installation, upgrades, and management
-- **Real-time Monitoring**: Live resource status and metrics
-- **Security**: RBAC integration and audit logging
+## 3. Deploy on Kubernetes (AKS, EKS, GKE)
 
-### Advanced Features
-- **Intelligent Diagnostics**: AI-powered troubleshooting workflows
-- **Performance Analysis**: Resource utilization and capacity planning
-- **Security Scanning**: Vulnerability assessment and compliance checking
-- **Batch Operations**: Efficient bulk resource operations
-- **Safe Mode**: Read-only and non-destructive operation modes
+### Edit the image name in `k8s-mcp-server.yaml`:
+Replace `yourrepo/mcp-server:latest` with your image name.
 
-### MCP Integration
-- **Tools**: 50+ Kubernetes operations exposed as MCP tools
-- **Resources**: Dynamic resource discovery and hierarchical organization
-- **Prompts**: Guided troubleshooting and best practice workflows
-- **Streaming**: Real-time log streaming and event monitoring
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    MCP Server                           │
-├─────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐ ┌─────────────────┐               │
-│  │   MCP Handler   │ │  Auth Manager   │               │
-│  └─────────────────┘ └─────────────────┘               │
-│  ┌─────────────────┐ ┌─────────────────┐               │
-│  │ Kubernetes API  │ │  Cache Layer    │               │
-│  │    Manager      │ │                 │               │
-│  └─────────────────┘ └─────────────────┘               │
-│  ┌─────────────────┐ ┌─────────────────┐               │
-│  │ Security Layer  │ │ Metrics & Logs  │               │
-│  └─────────────────┘ └─────────────────┘               │
-└─────────────────────────────────────────────────────────┘
+### Apply the manifest
+```sh
+kubectl apply -f k8s-mcp-server.yaml
 ```
 
-## Development
+- This creates a namespace, ServiceAccount, RBAC, Deployment, and Service.
+- By default, the Service is `ClusterIP` (internal). Change to `LoadBalancer` or `NodePort` for external access.
 
-```bash
-# Start development mode
-npm run dev
+---
 
-# Run tests
-npm test
+## 4. Using the MCP Server
 
-# Run tests with coverage
-npm run test:coverage
+### HTTP Chunked Endpoint
+- The server exposes `/call-tool-chunked` on port 3000.
+- Example (using `curl`):
+  ```sh
+  curl -X POST http://<server-ip>:3000/call-tool-chunked \
+    -H "Content-Type: application/json" \
+    -d '{"name": "get_pods", "args": {"namespace": "default"}}'
+  ```
+- The response will stream progress and results as JSON lines.
 
-# Lint code
-npm run lint
+### Using Prompts
+- To use a prompt, POST to `/call-tool-chunked` with the prompt name, e.g.:
+  ```sh
+  curl -X POST http://<server-ip>:3000/call-tool-chunked \
+    -H "Content-Type: application/json" \
+    -d '{"name": "k8s-pod-crashloop-diagnose", "args": {"podName": "my-pod", "namespace": "default"}}'
+  ```
 
-# Format code
-npm run format
-```
+---
 
-## Security
+## 5. Kubeconfig and Permissions
+- The MCP server uses the kubeconfig available in the container (default: `/root/.kube/config`).
+- For in-cluster deployments, it uses the ServiceAccount and RBAC provided in the manifest.
+- To use a custom kubeconfig, mount it as a secret and update the Deployment (see commented lines in the manifest).
 
-This server implements enterprise-grade security features:
+---
 
-- **Authentication**: Multiple authentication methods (kubeconfig, service accounts, OIDC)
-- **Authorization**: RBAC integration with permission validation
-- **Encryption**: TLS for all communications
-- **Audit**: Comprehensive operation logging
-- **Compliance**: SOC2, GDPR, ISO 27001 considerations
+## 6. Security Notes
+- **Do not expose the MCP server to the public internet without authentication and TLS.**
+- Use network policies, firewalls, or VPNs to restrict access.
+- Use least-privilege RBAC for the ServiceAccount.
+
+---
+
+## 7. Extending and Customizing
+- Add new tools, resources, or prompts in the `src/` directory.
+- Rebuild and redeploy the Docker image after making changes.
+
+---
+
+## 8. Troubleshooting
+- Check logs with `kubectl logs -n mcp-server deploy/mcp-server`.
+- Ensure the ServiceAccount has the required permissions for your use case.
+- For local testing, ensure your kubeconfig is valid and has cluster access.
+
+---
 
 ## License
-
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-See CONTRIBUTING.md for development guidelines and contribution process.
+MIT
